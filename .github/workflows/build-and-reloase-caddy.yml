@@ -97,15 +97,13 @@ jobs:
           docker run --rm -v $PWD:/workspace \
             -e GOOS=linux -e GOARCH=${{ matrix.arch }} \
             caddy:${CADDY_VERSION#v}-builder-alpine \
-            xcaddy build $MODULES --output /workspace/build/caddy-$CADDY_VERSION-$GOARCH
-          
-          mv /workspace/build/caddy-$CADDY_VERSION-$GOARCH caddy-linux-${{ matrix.arch }}
+            xcaddy build $MODULES --output /workspace/build/caddy-$GOOS-$GOARCH
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: caddy-linux-${{ matrix.arch }}
-          path: caddy-linux-${{ matrix.arch }}
+          path: $PWD/build/caddy-linux-${{ matrix.arch }}
 
   create_release:
     needs: [check_updates, build_and_release]
