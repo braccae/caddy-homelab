@@ -1,0 +1,25 @@
+---
+modules:
+
+
+  cloudflare-ip:
+    caddy-module: github.com/WeidiDeng/caddy-cloudflare-ip
+    git-page: "https://github.com/WeidiDeng/caddy-cloudflare-ip"
+    uses-releases: false
+
+  cloudflare-dns:
+   caddy-module: "github.com/caddy-dns/cloudflare"
+   git-page: "https://github.com/caddy-dns/cloudflare"
+   uses-release: false
+
+  git-fs:
+    caddy-module: "github.com/mohammed90/caddy-git-fs"
+    git-page: "https://github.com/mohammed90/caddy-git-fs"
+    uses-release: false
+
+  crowdsec-bouncer:
+    caddy-module: "github.com/hslatman/caddy-crowdsec-bouncer/crowdsec"
+    git-page: "https://github.com/hslatman/caddy-crowdsec-bouncer"
+    uses-release: true
+
+

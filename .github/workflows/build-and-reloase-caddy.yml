@@ -3,59 +3,88 @@ name: Build and Release Custom Caddy
 on:
   workflow_dispatch:
   repository_dispatch:
-    types: [caddy_release, module_release]
+    types: [caddy_release, module_update]
   schedule:
-    - cron: '0 0 * * *'  # Run daily to check for new releases
+    - cron: '0 0 * * *'  # Run daily to check for updates
 
 jobs:
-  check_releases:
+  check_updates:
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       caddy_version: ${{ steps.check.outputs.caddy_version }}
-      modules_versions: ${{ steps.check.outputs.modules_versions }}
+      modules_updates: ${{ steps.check.outputs.modules_updates }}
     steps:
       - uses: actions/checkout@v3
-      - name: Check for new releases
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod a+x /usr/local/bin/yq
+      - name: Check for updates
         id: check
         run: |
           # Check Caddy releases
           LATEST_CADDY=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest | jq -r .tag_name)
           CURRENT_CADDY=$(cat .caddy_version || echo "v0.0.0")
           
-          # Check module releases
+          # Check module updates
           MODULES_CHANGED=false
-          MODULES_VERSIONS="{}"
-          while IFS= read -r module; do
-            repo=$(echo $module | cut -d '/' -f 2-3)
-            LATEST_MODULE=$(curl -s https://api.github.com/repos/$repo/releases/latest | jq -r .tag_name)
-            CURRENT_MODULE=$(cat .${repo//\//_}_version || echo "v0.0.0")
-            if [ "$LATEST_MODULE" != "$CURRENT_MODULE" ]; then
-              MODULES_CHANGED=true
-              echo $LATEST_MODULE > .${repo//\//_}_version
-              MODULES_VERSIONS=$(echo $MODULES_VERSIONS | jq --arg repo "$repo" --arg version "$LATEST_MODULE" '. + {($repo): $version}')
+          MODULES_UPDATES="{}"
+          
+          yq e '.modules | to_entries[]' modules.yaml | while read -r module; do
+            name=$(echo "$module" | yq e '.key' -)
+            caddy_module=$(echo "$module" | yq e '.value.caddy-module' -)
+            git_page=$(echo "$module" | yq e '.value.git-page' -)
+            uses_release=$(echo "$module" | yq e '.value.uses-release' -)
+            
+            repo=$(echo "$git_page" | cut -d'/' -f4-5)
+            
+            if [ "$uses_release" = "true" ]; then
+              LATEST_MODULE=$(curl -s https://api.github.com/repos/$repo/releases/latest | jq -r .tag_name)
+              CURRENT_MODULE=$(cat .${name}_version || echo "v0.0.0")
+              if [ "$LATEST_MODULE" != "$CURRENT_MODULE" ]; then
+                MODULES_CHANGED=true
+                echo $LATEST_MODULE > .${name}_version
+                MODULES_UPDATES=$(echo $MODULES_UPDATES | jq --arg name "$name" --arg version "$LATEST_MODULE" --arg type "release" '. + {($name): {version: $version, type: $type}}')
+              fi
+            else
+              LATEST_COMMIT=$(curl -s https://api.github.com/repos/$repo/commits/main | jq -r .sha)
+              if [ -z "$LATEST_COMMIT" ]; then
+                LATEST_COMMIT=$(curl -s https://api.github.com/repos/$repo/commits/master | jq -r .sha)
+              fi
+              CURRENT_COMMIT=$(cat .${name}_commit || echo "")
+              if [ "$LATEST_COMMIT" != "$CURRENT_COMMIT" ]; then
+                MODULES_CHANGED=true
+                echo $LATEST_COMMIT > .${name}_commit
+                COMMIT_DATE=$(curl -s https://api.github.com/repos/$repo/commits/$LATEST_COMMIT | jq -r .commit.author.date)
+                COMMIT_MESSAGE=$(curl -s https://api.github.com/repos/$repo/commits/$LATEST_COMMIT | jq -r .commit.message | head -n 1)
+                MODULES_UPDATES=$(echo $MODULES_UPDATES | jq --arg name "$name" --arg date "$COMMIT_DATE" --arg message "$COMMIT_MESSAGE" --arg type "commit" '. + {($name): {date: $date, message: $message, type: $type}}')
+              fi
             fi
-          done < modules.txt
+          done
           
           if [ "$LATEST_CADDY" != "$CURRENT_CADDY" ] || [ "$MODULES_CHANGED" = true ]; then
             echo $LATEST_CADDY > .caddy_version
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "caddy_version=$LATEST_CADDY" >> $GITHUB_OUTPUT
-            echo "modules_versions=$MODULES_VERSIONS" >> $GITHUB_OUTPUT
+            echo "modules_updates=$MODULES_UPDATES" >> $GITHUB_OUTPUT
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
   build_and_release:
-    needs: check_releases
-    if: needs.check_releases.outputs.should_build == 'true'
+    needs: check_updates
+    if: needs.check_updates.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v3
-
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod a+x /usr/local/bin/yq
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
@@ -66,7 +95,7 @@ jobs:
 
       - name: Build Caddy
         run: |
-          MODULES=$(cat modules.txt | xargs -I {} echo --with {})
+          MODULES=$(yq e '.modules[].caddy-module' modules.yaml | xargs -I {} echo --with {})
           GOARCH=${{ matrix.arch }} xcaddy build $MODULES
           mv caddy caddy-linux-${{ matrix.arch }}
 
@@ -77,20 +106,18 @@ jobs:
           path: caddy-linux-${{ matrix.arch }}
 
   create_release:
-    needs: [check_releases, build_and_release]
+    needs: [check_updates, build_and_release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-
       - name: Download artifacts
         uses: actions/download-artifact@v3
-
       - name: Prepare Release Notes
         id: release_notes
         run: |
           echo "MAIN:" > release_notes.md
           echo "" >> release_notes.md
-          echo "caddy update to ${{ needs.check_releases.outputs.caddy_version }}" >> release_notes.md
+          echo "caddy update to ${{ needs.check_updates.outputs.caddy_version }}" >> release_notes.md
           echo "modules update to various versions" >> release_notes.md
           echo "" >> release_notes.md
           echo "CADDY:" >> release_notes.md
@@ -99,11 +126,13 @@ jobs:
           echo "" >> release_notes.md
           echo "MODULES:" >> release_notes.md
           echo "" >> release_notes.md
-          echo '${{ needs.check_releases.outputs.modules_versions }}' | jq -r 'to_entries[] | "\(.key)\n  \(.value)"' | while read -r module; read -r version; do
-            echo "$module" >> release_notes.md
-            curl -s "https://api.github.com/repos/$module/releases/tags/$version" | jq -r .body | sed 's/^/  /' >> release_notes.md
-            echo "" >> release_notes.md
-          done
+          echo '${{ needs.check_updates.outputs.modules_updates }}' | jq -r 'to_entries[] | .key as $name | .value | 
+          if .type == "release" then 
+            "\($name)\n  Updated to version \(.version)\n" + 
+            (curl -s "https://api.github.com/repos/\($name)/releases/tags/\(.version)" | jq -r .body | sed "s/^/  /")
+          else 
+            "\($name)\n  Updated on \(.date)\n  Commit message: \(.message)\n"
+          end' >> release_notes.md
 
       - name: Create Release
         id: create_release
@@ -111,8 +140,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ needs.check_releases.outputs.caddy_version }}
-          release_name: Release ${{ needs.check_releases.outputs.caddy_version }}
+          tag_name: ${{ needs.check_updates.outputs.caddy_version }}
+          release_name: Release ${{ needs.check_updates.outputs.caddy_version }}
           body_path: release_notes.md
           draft: false
           prerelease: false
