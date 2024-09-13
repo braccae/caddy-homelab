@@ -6,6 +6,7 @@ on:
       - 'Dockerfile'
   schedule:
     - cron: '0 0 * * 0'  # Run weekly to check for upstream image updates
+  workflow_dispatch:  # Allow manual triggering
 
 env:
   REGISTRY: ghcr.io
@@ -40,6 +41,19 @@ jobs:
       uses: docker/metadata-action@v4
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=schedule
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=sha
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Add manual_run tag if manually triggered
+      if: github.event_name == 'workflow_dispatch'
+      run: echo "MANUAL_RUN_TAG=manual_run" >> $GITHUB_ENV
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
@@ -47,7 +61,7 @@ jobs:
         context: .
         push: true
         platforms: linux/amd64,linux/arm64
-        tags: ${{ steps.meta.outputs.tags }}
+        tags: ${{ steps.meta.outputs.tags }}${{ env.MANUAL_RUN_TAG != '' && format(',{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, env.MANUAL_RUN_TAG) || '' }}
         labels: ${{ steps.meta.outputs.labels }}
 
     - name: Extract Caddy binary and modules
@@ -63,8 +77,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.meta.outputs.version }}
-        release_name: Release ${{ steps.meta.outputs.version }}
+        tag_name: ${{ steps.meta.outputs.version }}${{ env.MANUAL_RUN_TAG != '' && '-manual_run' || '' }}
+        release_name: Release ${{ steps.meta.outputs.version }}${{ env.MANUAL_RUN_TAG != '' && ' (Manual Run)' || '' }}
         body: |
           Caddy Modules:
           $(cat modules.txt)
