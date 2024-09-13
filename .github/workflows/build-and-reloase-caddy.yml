@@ -27,7 +27,7 @@ jobs:
           MODULES_CHANGED=false
           MODULES_VERSIONS="{}"
           while IFS= read -r module; do
-            repo=$(echo $module | cut -d ' ' -f 2)
+            repo=$(echo $module | cut -d '/' -f 2-3)
             LATEST_MODULE=$(curl -s https://api.github.com/repos/$repo/releases/latest | jq -r .tag_name)
             CURRENT_MODULE=$(cat .${repo//\//_}_version || echo "v0.0.0")
             if [ "$LATEST_MODULE" != "$CURRENT_MODULE" ]; then
