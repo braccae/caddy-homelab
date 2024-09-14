@@ -129,7 +129,7 @@ jobs:
           echo '${{ needs.check_updates.outputs.modules_updates }}' | jq -r 'to_entries[] | .key as $name | .value | 
           if .type == "release" then 
             "\($name)\n  Updated to version \(.version)\n" + 
-            (curl -s "https://api.github.com/repos/\($name)/releases/tags/\(.version)" | jq -r .body | sed "s/^/  /")
+            (curl -s "https://api.github.com/repos/\($name)/releases/tags/\(.version)" | jq -r '.body' | sed "s/^/  /")
           else 
             "\($name)\n  Updated on \(.date)\n  Commit message: \(.message)\n"
           end' >> release_notes.md
