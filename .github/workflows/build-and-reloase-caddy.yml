@@ -15,10 +15,6 @@ jobs:
       caddy_version: ${{ steps.check.outputs.caddy_version }}
     steps:
       - uses: actions/checkout@v3
-      - name: Install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod a+x /usr/local/bin/yq
       - name: Check for updates
         id: check
         run: |
