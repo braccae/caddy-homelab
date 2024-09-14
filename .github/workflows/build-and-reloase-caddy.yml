@@ -65,7 +65,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: caddy-linux-${{ matrix.arch }}
-          path: $PWD/build/caddy-linux-${{ matrix.arch }}
+          path: build/caddy-linux-${{ matrix.arch }}
 
   create_release:
     needs: [check_updates, build_and_release]
