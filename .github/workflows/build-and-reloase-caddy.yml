@@ -80,7 +80,6 @@ jobs:
           echo "MAIN:" > release_notes.md
           echo "" >> release_notes.md
           echo "caddy update to ${{ needs.check_updates.outputs.caddy_version }}" >> release_notes.md
-          echo "modules update to various versions" >> release_notes.md
           echo "" >> release_notes.md
           echo "CADDY:" >> release_notes.md
           echo "" >> release_notes.md
