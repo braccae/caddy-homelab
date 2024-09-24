@@ -22,4 +22,7 @@ modules:
     git-page: "hslatman/caddy-crowdsec-bouncer"
     uses-release: true
 
-
+  caddy-tailscale:
+    caddy-module: "github.com/tailscale/caddy-tailscale"
+    git-page: "tailscale/caddy-tailscale"
+    uses-release: false
