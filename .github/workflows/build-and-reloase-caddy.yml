@@ -1,9 +1,8 @@
-name: Build and Release Custom Caddy
-
 on:
   workflow_dispatch:
-  repository_dispatch:
-    types: [caddy_release, module_update]
+  push:
+    paths:
+      - 'modules.yaml'
   schedule:
     - cron: '0 0 * * *'  # Run daily to check for updates
 
@@ -13,6 +12,7 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       caddy_version: ${{ steps.check.outputs.caddy_version }}
+      custom_version: ${{ steps.check.outputs.custom_version }}
     steps:
       - uses: actions/checkout@v3
       - name: Check for updates
@@ -22,10 +22,15 @@ jobs:
           LATEST_CADDY=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest | jq -r .tag_name)
           CURRENT_CADDY=$(cat .caddy_version || echo "v0.0.0")
           
-          if [ "$LATEST_CADDY" != "$CURRENT_CADDY" ] || [ "$MODULES_CHANGED" = true ]; then
+          # Generate hash of modules.yaml
+          MODULES_HASH=$(sha256sum modules.yaml | cut -d ' ' -f 1)
+          
+          # Check if we need to build
+          if [ "$LATEST_CADDY" != "$CURRENT_CADDY" ] || [ "${{ github.event_name }}" == "push" ] || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo $LATEST_CADDY > .caddy_version
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "caddy_version=$LATEST_CADDY" >> $GITHUB_OUTPUT
+            echo "custom_version=${LATEST_CADDY#v}-${MODULES_HASH:0:8}" >> $GITHUB_OUTPUT
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
@@ -73,21 +78,36 @@ jobs:
       - name: Prepare Release Notes
         id: release_notes
         run: |
-          echo "MAIN:" > release_notes.md
+          echo "Custom Caddy Build" > release_notes.md
           echo "" >> release_notes.md
-          echo "caddy update to ${{ needs.check_updates.outputs.caddy_version }}" >> release_notes.md
+          echo "Version: ${{ needs.check_updates.outputs.custom_version }}" >> release_notes.md
+          echo "Based on Caddy ${{ needs.check_updates.outputs.caddy_version }}" >> release_notes.md
           echo "" >> release_notes.md
-          echo "CADDY:" >> release_notes.md
-          echo "" >> release_notes.md
-          curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest | jq -r .body >> release_notes.md
+          echo "Included modules:" >> release_notes.md
+          yq e '.modules[].caddy-module' modules.yaml >> release_notes.md
+          
+      - name: Check for existing release
+        id: check_release
+        run: |
+          RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ needs.check_updates.outputs.custom_version }}" \
+            | jq -r '.id')
+          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+
+      - name: Delete existing release if it exists
+        if: steps.check_release.outputs.release_id != 'null'
+        run: |
+          curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/${{ steps.check_release.outputs.release_id }}"
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ needs.check_updates.outputs.caddy_version }}
-          release_name: Release ${{ needs.check_updates.outputs.caddy_version }}
+          tag_name: ${{ needs.check_updates.outputs.custom_version }}
+          release_name: Custom Caddy ${{ needs.check_updates.outputs.custom_version }}
           body_path: release_notes.md
           draft: false
           prerelease: false
