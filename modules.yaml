@@ -12,10 +12,10 @@ modules:
    git-page: "caddy-dns/cloudflare"
    uses-release: false
 
-  git-fs:
-    caddy-module: "github.com/mohammed90/caddy-git-fs"
-    git-page: "mohammed90/caddy-git-fs"
-    uses-release: false
+  # git-fs:
+  #   caddy-module: "github.com/mohammed90/caddy-git-fs"
+  #   git-page: "mohammed90/caddy-git-fs"
+  #   uses-release: false
 
   crowdsec-bouncer:
     caddy-module: "github.com/hslatman/caddy-crowdsec-bouncer/crowdsec"
