@@ -2,9 +2,9 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'modules.yaml'
+      - '.github/workflows/modules.json'
   schedule:
-    - cron: '0 0 * * *'  # Run daily to check for updates
+    - cron: '0 0 * * 1'  # update weekly on monday
 
 jobs:
   check_updates:
@@ -22,8 +22,8 @@ jobs:
           LATEST_CADDY=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest | jq -r .tag_name)
           CURRENT_CADDY=$(cat .caddy_version || echo "v0.0.0")
           
-          # Generate hash of modules.yaml
-          MODULES_HASH=$(sha256sum modules.yaml | cut -d ' ' -f 1)
+          # Generate hash of modules.json
+          MODULES_HASH=$(sha256sum modules.json | cut -d ' ' -f 1)
           
           # Check if we need to build
           if [ "$LATEST_CADDY" != "$CURRENT_CADDY" ] || [ "${{ github.event_name }}" == "push" ] || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
@@ -53,7 +53,7 @@ jobs:
       - name: Build Caddy
         run: |
           CADDY_VERSION=${{ needs.check_updates.outputs.caddy_version }}
-          MODULES=$(yq e '.modules[].caddy-module' modules.yaml | xargs -I {} echo --with {})
+          MODULES=$(jq -r '.modules | to_entries[] | .value["caddy-module"]' modules.json | xargs -I {} echo --with {})
           GOOS=linux
           GOARCH=${{ matrix.arch }}
           
@@ -84,7 +84,7 @@ jobs:
           echo "Based on Caddy ${{ needs.check_updates.outputs.caddy_version }}" >> release_notes.md
           echo "" >> release_notes.md
           echo "Included modules:" >> release_notes.md
-          yq e '.modules[].caddy-module' modules.yaml >> release_notes.md
+          jq -r '.modules | to_entries[] | .value["caddy-module"]' modules.json >> release_notes.md
           
       - name: Check for existing release
         id: check_release
