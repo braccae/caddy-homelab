@@ -10,22 +10,60 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     
     steps:
       - uses: actions/checkout@v4
       
       - name: Install yq
         run: |
-          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
-          chmod +x /usr/local/bin/yq
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
       
       - name: Convert YAML to JSON
         run: |
-          yq -o=json modules.yaml > .github/workflows/modules.json
+          yq -o=json modules.yaml > modules.json
       
-      - name: Commit and push if changed
+      - name: Setup GitHub CLI
         run: |
+          type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh -y
+      
+      - name: Create Pull Request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Configure git
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          
+          # Create a new branch
+          timestamp=$(date +%Y%m%d%H%M%S)
+          branch_name="update-modules-json-${timestamp}"
+          git checkout -b $branch_name
+          
+          # Add and commit changes
           git add modules.json
-          git diff --quiet && git diff --staged --quiet || (git pull && git commit -m "Update modules.json from modules.yaml" && git push)
+          if ! git diff --quiet && ! git diff --staged --quiet; then
+            git commit -m "Update modules.json from modules.yaml"
+            
+            # Push branch and create PR
+            git push origin $branch_name
+            
+            # Create PR using GitHub CLI
+            pr_url=$(gh pr create --title "Update modules.json from modules.yaml" \
+              --body "Automated PR to update modules.json from modules.yaml" \
+              --base main \
+              --head $branch_name \
+              --label "automated" \
+              --json url -q .url)
+            
+            # Enable auto-merge
+            gh pr merge $pr_url --auto --merge
+          else
+            echo "No changes to commit"
+          fi
