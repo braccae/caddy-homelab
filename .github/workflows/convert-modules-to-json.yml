@@ -22,7 +22,7 @@ jobs:
       
       - name: Convert YAML to JSON
         run: |
-          yq -o=json modules.yaml > .github/workflows/modules.json
+          yq -o=json modules.yaml > modules.json
       
       - name: Configure Git
         run: |
