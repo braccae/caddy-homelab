@@ -1,6 +1,7 @@
 name: Convert Modules YAML to JSON
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'modules.yaml'
