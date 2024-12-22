@@ -12,6 +12,10 @@ modules:
    git-page: "caddy-dns/cloudflare"
    uses-release: false
 
+  docker-label:
+    caddy-module: "github.com/lucaslorentz/caddy-docker-proxy/v2"
+    git-page: "lucaslorentz/caddy-docker-proxy"
+    uses-release: true
   # git-fs:
   #   caddy-module: "github.com/mohammed90/caddy-git-fs"
   #   git-page: "mohammed90/caddy-git-fs"
